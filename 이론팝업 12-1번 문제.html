@@ -1,0 +1,644 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>구문분석 — STEP 해체 트리</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@300;400;500;700;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0d1017;
+    color: #d4d4d8;
+    font-family: 'Noto Sans KR', sans-serif;
+    line-height: 1.85;
+    padding: 44px 24px;
+  }
+
+  .wrap { max-width: 920px; margin: 0 auto; }
+
+  .hdr { text-align: center; margin-bottom: 44px; padding-bottom: 28px; border-bottom: 2px solid #1e2030; }
+  .hdr h1 { font-size: 1.5rem; font-weight: 900; color: #f4f4f5; letter-spacing: -0.5px; }
+  .hdr .src { font-size: 0.8rem; color: #6b7280; margin-top: 6px; }
+  .hdr .src b { background: #172033; color: #60a5fa; padding: 2px 10px; border-radius: 4px; font-weight: 600; }
+
+  .orig {
+    background: #13161f;
+    border-left: 4px solid #3b82f6;
+    padding: 22px 26px;
+    border-radius: 0 10px 10px 0;
+    margin-bottom: 20px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.88rem;
+    line-height: 2.1;
+    color: #c9cdd5;
+  }
+  .orig .lbl {
+    display: inline-block; background: #3b82f6; color: #fff;
+    font-family: 'Noto Sans KR'; font-size: 0.7rem; font-weight: 700;
+    padding: 2px 10px; border-radius: 4px; margin-bottom: 10px;
+  }
+  .orig .hl-beto {
+    background: rgba(251,191,36,0.18); color: #fbbf24;
+    padding: 1px 5px; border-radius: 3px; font-weight: 700;
+    border-bottom: 2px solid #fbbf24;
+  }
+  .orig .blank {
+    background: rgba(74,222,128,0.15); color: #4ade80;
+    padding: 1px 8px; border-radius: 3px; font-weight: 700;
+    border-bottom: 2px solid #4ade80;
+  }
+
+  .answer-box {
+    background: #111a20;
+    border: 1px solid #1a3a2a;
+    border-radius: 10px;
+    padding: 18px 24px;
+    margin-bottom: 42px;
+  }
+  .answer-box .ans-label {
+    font-size: 0.72rem; font-weight: 700; color: #4ade80;
+    letter-spacing: 1px; text-transform: uppercase; margin-bottom: 10px;
+  }
+  .answer-box .choices {
+    display: flex; gap: 12px; flex-wrap: wrap;
+  }
+  .answer-box .ch {
+    font-family: 'JetBrains Mono'; font-size: 0.8rem;
+    padding: 5px 14px; border-radius: 6px;
+    border: 1px solid #1e2030; color: #6b7280;
+  }
+  .answer-box .ch.correct {
+    background: rgba(74,222,128,0.12); border-color: #4ade80;
+    color: #4ade80; font-weight: 700;
+  }
+
+  .legend {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    padding: 16px 22px; background: #111420;
+    border: 1px solid #1e2030; border-radius: 8px;
+    margin-bottom: 42px;
+  }
+  .lg-i { display: flex; align-items: center; gap: 6px; font-size: 0.76rem; color: #a1a1aa; }
+  .lg-d { width: 10px; height: 10px; border-radius: 3px; }
+
+  .sent-sec { margin-bottom: 56px; }
+  .sent-hd {
+    font-size: 1.0rem; font-weight: 700; color: #f4f4f5;
+    margin-bottom: 28px; display: flex; align-items: flex-start; gap: 12px;
+    line-height: 1.75;
+  }
+  .sent-hd .n {
+    flex-shrink: 0;
+    background: linear-gradient(135deg, #3b82f6, #6366f1);
+    color: #fff; min-width: 32px; height: 32px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 700; margin-top: 2px;
+  }
+
+  .stp {
+    background: #111420;
+    border: 1px solid #1e2030;
+    border-radius: 10px;
+    padding: 22px 26px;
+    margin-bottom: 18px;
+    position: relative;
+  }
+  .stp::after {
+    content: ''; position: absolute; left: 36px; bottom: -18px;
+    width: 2px; height: 18px; background: #1e2030;
+  }
+  .stp:last-of-type::after, .stp.no-bar::after { display: none; }
+
+  .stp-hd { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+  .badge {
+    font-family: 'JetBrains Mono'; font-size: 0.68rem; font-weight: 700;
+    padding: 3px 10px; border-radius: 5px; letter-spacing: 0.5px;
+  }
+  .b-sk { background: #17243a; color: #60a5fa; }
+  .b-bd { background: #162a1e; color: #4ade80; }
+  .b-dt { background: #2a2310; color: #fbbf24; }
+  .b-fl { background: #28162a; color: #f472b6; }
+
+  .stp-desc { font-size: 0.84rem; color: #9ca3af; }
+
+  .tree {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    line-height: 2.3;
+    white-space: pre-wrap;
+    word-break: break-word;
+    padding: 6px 0;
+  }
+
+  .s  { color: #60a5fa; font-weight: 700; }
+  .v  { color: #f472b6; font-weight: 700; }
+  .o  { color: #4ade80; font-weight: 600; }
+  .pp { color: #fbbf24; }
+  .cj { color: #fb923c; font-weight: 700; }
+  .ac { color: #c084fc; }
+  .nc { color: #67e8f9; }
+  .adj { color: #f9a8d4; }
+  .md { color: #94a3b8; font-style: italic; }
+  .bt { color: #fbbf24; font-weight: 700; background: rgba(251,191,36,0.12); padding: 1px 4px; border-radius: 3px; }
+  .ps { color: #fb7185; }
+  .cm { color: #6b7280; font-size: 0.79rem; }
+
+  .t {
+    display: inline; font-family: 'Noto Sans KR';
+    font-size: 0.58rem; font-weight: 600;
+    vertical-align: super; margin-left: 1px;
+    padding: 0 4px; border-radius: 2px;
+  }
+  .t-s  { background: rgba(96,165,250,0.15); color: #60a5fa; }
+  .t-v  { background: rgba(244,114,182,0.15); color: #f472b6; }
+  .t-o  { background: rgba(74,222,128,0.15); color: #4ade80; }
+  .t-pp { background: rgba(251,191,36,0.15); color: #fbbf24; }
+  .t-cj { background: rgba(251,146,22,0.15); color: #fb923c; }
+  .t-ac { background: rgba(192,132,252,0.15); color: #c084fc; }
+  .t-nc { background: rgba(103,232,249,0.15); color: #67e8f9; }
+  .t-adj { background: rgba(249,168,212,0.15); color: #f9a8d4; }
+
+  .note {
+    font-size: 0.82rem; color: #7a7f8c; line-height: 1.8;
+    margin-top: 10px; padding-top: 10px;
+    border-top: 1px dashed #1e2030;
+  }
+  .note b { color: #a0a5b0; font-weight: 600; }
+
+  .step-tr {
+    background: #0e1828;
+    border: 1px solid #182a44;
+    border-radius: 8px;
+    padding: 12px 18px;
+    margin-top: 12px;
+    font-size: 0.88rem;
+    color: #a8c4e0;
+    line-height: 1.8;
+  }
+  .step-tr::before {
+    content: '🔤';
+    margin-right: 6px;
+  }
+  .step-tr .kw {
+    color: #fbbf24;
+    font-weight: 500;
+  }
+
+  .gbox {
+    background: #14111f;
+    border: 1px solid #2d2545;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin: 16px 0;
+  }
+  .gbox h4 {
+    font-size: 0.9rem; color: #c084fc; margin-bottom: 10px;
+    display: flex; align-items: center; gap: 6px;
+  }
+  .gbox p {
+    font-size: 0.84rem; color: #a0a0b0; line-height: 1.9; margin-bottom: 6px;
+  }
+  .gbox code {
+    background: rgba(251,191,36,0.1); color: #fbbf24;
+    padding: 1px 5px; border-radius: 3px;
+    font-family: 'JetBrains Mono'; font-size: 0.8rem;
+  }
+  .gbox .ex {
+    background: #0d0d18; border-radius: 6px; padding: 10px 14px;
+    margin-top: 8px; font-size: 0.82rem; color: #b0b0c0; line-height: 1.8;
+  }
+
+  .trbox {
+    background: #101828;
+    border: 1px solid #1e3050;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-top: 12px;
+  }
+  .trbox .lb { font-size: 0.68rem; font-weight: 700; color: #38bdf8; letter-spacing: 1px; margin-bottom: 8px; }
+  .trbox p { font-size: 0.92rem; color: #c9cdd5; line-height: 1.95; }
+  .trbox .kw { color: #fbbf24; font-weight: 500; }
+
+  .vocab {
+    background: #111420; border: 1px solid #1e2030; border-radius: 10px;
+    padding: 20px 24px; margin-top: 16px;
+  }
+  .vocab .lb { font-size: 0.68rem; font-weight: 700; color: #4ade80; letter-spacing: 1px; margin-bottom: 10px; }
+  .vocab ul { list-style: none; columns: 2; gap: 20px; }
+  .vocab li {
+    font-size: 0.82rem; color: #a1a1aa; line-height: 1.7; margin-bottom: 5px;
+    break-inside: avoid;
+  }
+  .vocab li b { color: #e0e0e0; font-weight: 600; }
+
+  .dvd { border: none; height: 1px; background: #1e2030; margin: 44px 0; }
+
+  @media print {
+    body { background: #fff; color: #111; padding: 16px; font-size: 10.5pt; }
+    .wrap { max-width: 100%; }
+    .stp, .gbox, .trbox, .vocab, .legend, .orig, .answer-box { background: #fafafa; border-color: #ddd; }
+    .step-tr { background: #f0f7ff; border-color: #bfdbfe; color: #1e3a5f; }
+    .s { color: #1d4ed8; } .v { color: #be185d; } .o { color: #15803d; }
+    .pp { color: #a16207; } .cj { color: #c2410c; } .ac { color: #7c3aed; }
+    .nc { color: #0891b2; } .adj { color: #be185d; }
+    .bt { background: #fef3c7; color: #92400e; }
+    .trbox { background: #f0f7ff; border-color: #bfdbfe; }
+    .gbox { background: #faf5ff; border-color: #e9d5ff; }
+    .stp::after { background: #ddd; }
+    .hdr { border-bottom-color: #ddd; }
+    .dvd { background: #ddd; }
+    .note { border-top-color: #ddd; color: #555; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+
+<!-- ═══════════════════ 헤더 ═══════════════════ -->
+<div class="hdr">
+  <h1>구문분석 — STEP 해체 트리</h1>
+  <p class="src">편입영어 12-1번 <b>난이도 ☆☆☆ 구문</b> &nbsp;[리뷰]</p>
+</div>
+
+<!-- 범례 -->
+<div class="legend">
+  <div class="lg-i"><div class="lg-d" style="background:#60a5fa"></div>주어 S</div>
+  <div class="lg-i"><div class="lg-d" style="background:#f472b6"></div>동사 V</div>
+  <div class="lg-i"><div class="lg-d" style="background:#4ade80"></div>목적어·보어 O/C</div>
+  <div class="lg-i"><div class="lg-d" style="background:#fbbf24"></div>전치사구 PP</div>
+  <div class="lg-i"><div class="lg-d" style="background:#fb923c"></div>접속사</div>
+  <div class="lg-i"><div class="lg-d" style="background:#c084fc"></div>부사절</div>
+  <div class="lg-i"><div class="lg-d" style="background:#67e8f9"></div>명사절</div>
+  <div class="lg-i"><div class="lg-d" style="background:#f9a8d4"></div>관계절</div>
+</div>
+
+<!-- 원문 -->
+<div class="orig">
+  <span class="lbl">원문</span><br>
+If the capitalist system continues to absorb large parts of the cultural realm into its sphere in the form of commodified cultural productions, the risk is very real that the culture will <span class="blank">atrophy</span> to the point where it can no longer produce enough social capital. The delicate balance between culture and commerce will have been shattered because social capital, which serves as the <span class="blank">lubricant</span> for commercial operations, will have dried up.
+</div>
+
+<!-- 정답 -->
+<div class="answer-box">
+  <div class="ans-label">정답</div>
+  <div class="choices">
+    <span class="ch">① flourish — catalyst</span>
+    <span class="ch correct">✓ ② atrophy — lubricant</span>
+    <span class="ch">③ stagnate — impediment</span>
+    <span class="ch">④ burgeon — matrix</span>
+  </div>
+</div>
+
+
+<!-- ══════════════════════════════════════════════ -->
+<!--              문장 ①                           -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="sent-sec">
+<div class="sent-hd">
+  <span class="n">1</span>
+  <span>If the capitalist system continues to absorb large parts of the cultural realm into its sphere in the form of commodified cultural productions, the risk is very real that the culture will atrophy to the point where it can no longer produce enough social capital.</span>
+</div>
+
+<!-- STEP 0 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-sk">STEP 0</span>
+    <span class="stp-desc">뼈대 파악 — <span class="ac">If절</span>(조건) + <span style="color:#e4e4e7;">주절</span>(SVC + that 동격절 분리)</span>
+  </div>
+  <div class="tree">
+<span class="ac">[If절 — 조건]</span>, <span class="s">[S]</span> <span class="v">[V]</span> <span class="o">[C 보어]</span> <span class="nc">[that절 — S와 동격, 분리]</span>.
+  </div>
+  <div class="note">
+    → 핵심 구조: the risk <b>is</b> very real <b>that ~</b>
+    <br>→ that절이 주어 the risk에서 떨어져 보어(real) 뒤로 이동 = <b>동격 that절의 후치(분리)</b>
+  </div>
+  <div class="step-tr">
+    <span class="kw">[만약 ~한다면]</span>, [~라는] 위험은 매우 현실적이다.
+  </div>
+</div>
+
+<!-- STEP 1 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-bd">STEP 1</span>
+    <span class="stp-desc">If절 — 조건: 자본주의 시스템이 ~한다면</span>
+  </div>
+  <div class="tree">
+<span class="ac">If</span><span class="t t-ac">종속접속사·조건</span>
+  ├─ S: <span class="s">the capitalist system</span><span class="t t-s">S</span>
+  │
+  ├─ V: <span class="v">continues</span><span class="t t-v">V</span>
+  │     └─ <span class="v">to absorb</span><span class="t t-v">to부정사·목적어</span>
+  │
+  ├─ O: <span class="o">large parts</span><span class="t t-o">O</span>
+  │     └─ <span class="pp">of the cultural realm</span><span class="t t-pp">전명구 → parts 수식</span>
+  │
+  ├─ <span class="pp">into its sphere</span><span class="t t-pp">전명구 (방향)</span>
+  │
+  └─ <span class="pp">in the form</span><span class="t t-pp">전명구 (형태)</span>
+        └─ <span class="pp">of commodified cultural productions</span><span class="t t-pp">전명구 → form 수식</span>
+  </div>
+  <div class="note">
+    → <span class="v">continue to V</span> = "계속 ~하다"
+    <br>→ <span class="v">absorb</span> A <span class="pp">into</span> B = "A를 B 안으로 흡수하다"
+    <br>→ <span class="pp">in the form of ~</span> = "~의 형태로"
+    <br>→ <b>commodified</b> = 상품화된 (commodity → commodify → commodified)
+    <br>→ <b>cultural productions</b> = 문화적 생산물
+  </div>
+  <div class="step-tr">
+    만약 <span class="kw">자본주의 시스템이</span> 문화 영역의 많은 부분을 상품화된 문화적 생산물의 형태로 자신의 영역 안으로 <span class="kw">계속 흡수한다면</span>,
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-bd">STEP 2</span>
+    <span class="stp-desc">주절 — the risk is very real (SVC 2형식)</span>
+  </div>
+  <div class="tree">
+<span class="s">the risk</span><span class="t t-s">S 주어</span>
+<span class="v">is</span><span class="t t-v">V be동사</span>
+<span class="md">very</span> <span class="o">real</span><span class="t t-o">C 보어·형용사</span>
+  </div>
+  <div class="note">
+    → 2형식: S(the risk) + V(is) + C(very real)
+    <br>→ the risk에 대한 구체적 내용은 뒤의 that절이 설명 (동격 that절 분리)
+  </div>
+  <div class="step-tr">
+    <span class="kw">그 위험은 매우 현실적이다</span> (어떤 위험? → 아래 that절)
+  </div>
+</div>
+
+<!-- STEP 3 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-dt">STEP 3</span>
+    <span class="stp-desc">that 동격절 (분리) — the risk의 내용</span>
+  </div>
+  <div class="tree">
+<span class="nc">that</span><span class="t t-nc">접속사·동격</span> → the risk의 내용 설명 (분리 후치)
+  │
+  ├─ S: <span class="s">the culture</span><span class="t t-s">S</span>
+  │
+  ├─ V: <span class="v">will atrophy</span><span class="t t-v">V 자동사</span>
+  │
+  └─ <span class="pp">to the point</span><span class="t t-pp">전명구 (정도)</span>
+        └─ <span class="ac">where</span><span class="t t-ac">관계부사절 → point 수식</span>
+              ├─ S: <span class="s">it</span><span class="t t-s">S</span>
+              ├─ V: <span class="v">can no longer produce</span><span class="t t-v">V</span>
+              └─ O: <span class="o">enough social capital</span><span class="t t-o">O</span>
+  </div>
+  <div class="note">
+    → <span class="v">atrophy</span> = 위축되다, 쇠퇴하다 (← 빈칸 ①의 정답)
+    <br>→ <span class="pp">to the point where ~</span> = "~하는 지경까지" (정도 표현)
+    <br>→ <b>where</b> = 관계부사, 선행사 the point를 수식
+    <br>→ <span class="v">can no longer produce</span> = "더 이상 생산할 수 없다"
+    <br>→ <span class="o">enough social capital</span> = "충분한 사회적 자본"
+  </div>
+  <div class="step-tr">
+    (그 위험이란:) 문화가 더 이상 충분한 사회적 자본을 생산할 수 없는 <span class="kw">지경까지 위축될 것이라는</span> (위험)
+  </div>
+</div>
+
+<!-- 문법: 동격 that절 분리(후치) -->
+<div class="gbox">
+  <h4>💡 핵심 문법 ① — 동격 <code>that</code>절 분리 (후치)</h4>
+  <p>원래 어순: The risk <b>that the culture will atrophy ~</b> is very real.</p>
+  <p>실제 어순: The risk is very real <b>that the culture will atrophy ~</b>.</p>
+  <p>→ 동격 that절이 <b>너무 길어서</b> 보어(real) 뒤로 이동한 것 = <b>Heavy NP Shift (무거운 명사구 후치)</b></p>
+  <div class="ex">
+    같은 패턴:<br>
+    The fact <b>is clear</b> that he lied. (← The fact that he lied is clear.)<br>
+    The possibility <b>exists</b> that we may fail. (← The possibility that we may fail exists.)<br><br>
+    ★ 편입 핵심: 분리된 that절이 어떤 명사와 동격인지 찾는 것이 관건!
+  </div>
+</div>
+
+<!-- 문법: to the point where -->
+<div class="gbox">
+  <h4>💡 핵심 문법 ② — <code>to the point where ~</code></h4>
+  <p><code>atrophy to the point where it can no longer produce ~</code></p>
+  <p>→ <code>to the point where</code> = "~하는 <b>지경까지</b>, ~할 정도로"</p>
+  <p>→ <code>where</code> = 관계부사 (선행사: the point)</p>
+  <div class="ex">
+    He was exhausted <code>to the point where</code> he couldn't stand.<br>
+    = 서 있을 수 없는 지경까지 지쳤다.<br><br>
+    유사 표현: <code>to the extent that ~</code> = ~하는 정도까지
+  </div>
+</div>
+
+<!-- FULL TREE -->
+<div class="stp no-bar">
+  <div class="stp-hd">
+    <span class="badge b-fl">FULL TREE</span>
+    <span class="stp-desc">문장 ① 전체 트리</span>
+  </div>
+  <div class="tree">
+<b style="color:#e4e4e7;">문장①</b>
+│
+├─ <b style="color:#c084fc;">If절 (조건)</b>
+│   ├─ S: <span class="s">the capitalist system</span>
+│   ├─ V: <span class="v">continues to absorb</span>
+│   ├─ O: <span class="o">large parts</span>
+│   │     └─ <span class="pp">of the cultural realm</span>
+│   ├─ <span class="pp">into its sphere</span> ─── 방향
+│   └─ <span class="pp">in the form of commodified cultural productions</span> ─── 형태
+│
+├─ <b style="color:#e4e4e7;">주절 (SVC)</b>
+│   ├─ S: <span class="s">the risk</span>
+│   ├─ V: <span class="v">is</span>
+│   └─ C: <span class="md">very</span> <span class="o">real</span>
+│
+└─ <b style="color:#67e8f9;">that절 (동격·분리 → the risk의 내용)</b>
+    ├─ S: <span class="s">the culture</span>
+    ├─ V: <span class="v">will atrophy</span>
+    └─ <span class="pp">to the point</span>
+          └─ <b style="color:#c084fc;">where절</b> (관계부사 → point 수식)
+              ├─ S: <span class="s">it</span>
+              ├─ V: <span class="v">can no longer produce</span>
+              └─ O: <span class="o">enough social capital</span>
+  </div>
+</div>
+
+<!-- 전체 해석 -->
+<div class="trbox">
+  <div class="lb">전체 해석</div>
+  <p>만약 자본주의 시스템이 문화 영역의 많은 부분을 상품화된 문화적 생산물의 형태로 자신의 영역 안으로 <span class="kw">계속 흡수한다면</span>, 문화가 더 이상 충분한 사회적 자본을 생산할 수 없는 <span class="kw">지경까지 위축될 것이라는</span> 위험은 <span class="kw">매우 현실적이다</span>.</p>
+</div>
+
+</div><!-- /sent-sec 1 -->
+
+<hr class="dvd">
+
+<!-- ══════════════════════════════════════════════ -->
+<!--              문장 ②                           -->
+<!-- ══════════════════════════════════════════════ -->
+<div class="sent-sec">
+<div class="sent-hd">
+  <span class="n">2</span>
+  <span>The delicate balance between culture and commerce will have been shattered because social capital, which serves as the lubricant for commercial operations, will have dried up.</span>
+</div>
+
+<!-- STEP 0 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-sk">STEP 0</span>
+    <span class="stp-desc">뼈대 파악 — <span style="color:#e4e4e7;">주절</span>(미래완료 수동) + <span class="ac">because절</span>(이유)</span>
+  </div>
+  <div class="tree">
+<span class="s">[S]</span> <span class="v">[V 미래완료수동]</span> <span class="ac">[because절 — 이유]</span>.
+  </div>
+  <div class="step-tr">
+    [무엇]이 [파괴되었을 것이다] <span class="kw">[왜냐하면 ~이므로]</span>.
+  </div>
+</div>
+
+<!-- STEP 1 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-bd">STEP 1</span>
+    <span class="stp-desc">주절 — 미래완료 수동태 (will have been p.p.)</span>
+  </div>
+  <div class="tree">
+<span class="s">The delicate balance</span><span class="t t-s">S 주어</span>
+  └─ <span class="pp">between culture and commerce</span><span class="t t-pp">전명구 → balance 수식</span>
+
+<span class="v">will have been shattered</span><span class="t t-v">V 미래완료수동</span>
+  </div>
+  <div class="note">
+    → <span class="s">The delicate balance</span> = 그 섬세한 균형
+    <br>→ <span class="pp">between culture and commerce</span> = "문화와 상업 사이의" → balance 수식
+    <br>→ <span class="v">will have been shattered</span> = 미래완료 수동태
+    <br>&nbsp;&nbsp;&nbsp;= will + have + been + p.p. = "~되어 있을 것이다" (미래 시점 완료+수동)
+    <br>→ <b>shatter</b> = 산산이 부수다
+  </div>
+  <div class="step-tr">
+    문화와 상업 사이의 <span class="kw">섬세한 균형이 산산이 부서져 있을 것이다</span>
+  </div>
+</div>
+
+<!-- 문법: 미래완료수동 -->
+<div class="gbox">
+  <h4>💡 핵심 문법 ③ — 미래완료 수동태 <code>will have been p.p.</code></h4>
+  <p><code>will have been shattered</code></p>
+  <p>→ 시제 분해:</p>
+  <div class="ex">
+    <b>will</b> ────── 미래<br>
+    <b>have p.p.</b> ── 완료 (이미 끝난 상태)<br>
+    <b>be p.p.</b> ─── 수동<br><br>
+    합치면: <b>will</b> + <b>have</b> + <b>been</b> + <b>shattered</b><br>
+    = "(미래 어느 시점에) 이미 산산이 부서져 <b>있을 것이다</b>"<br><br>
+    같은 패턴:<br>
+    The project <code>will have been completed</code> by next month.<br>
+    = 다음 달까지 프로젝트가 완료되어 있을 것이다.
+  </div>
+</div>
+
+<!-- STEP 2 -->
+<div class="stp">
+  <div class="stp-hd">
+    <span class="badge b-bd">STEP 2</span>
+    <span class="stp-desc">because절 — 이유: 사회적 자본이 고갈되었을 것이므로</span>
+  </div>
+  <div class="tree">
+<span class="ac">because</span><span class="t t-ac">종속접속사·이유</span>
+
+<span class="s">social capital</span><span class="t t-s">S 주어</span>
+  │
+  └─ <span class="adj">, which serves as the <span style="color:#4ade80;font-weight:700;">lubricant</span></span><span class="t t-adj">관계대명사절·계속적 → social capital 보충설명</span>
+        └─ <span class="pp">for commercial operations</span><span class="t t-pp">전명구 → lubricant 수식</span>
+  │
+<span class="v">will have dried up</span><span class="t t-v">V 미래완료·자동사</span>
+  </div>
+  <div class="note">
+    → <span class="s">social capital</span> = 사회적 자본
+    <br>→ <span class="adj">, which serves as ~</span> = 계속적 용법 관계대명사 (삽입 보충설명)
+    <br>→ <b>serve as ~</b> = "~로서 기능하다, ~역할을 하다"
+    <br>→ <b style="color:#4ade80;">lubricant</b> = 윤활제 ← 빈칸 ②의 정답
+    <br>→ <span class="pp">for commercial operations</span> = "상업적 활동을 위한"
+    <br>→ <span class="v">will have dried up</span> = 미래완료 (고갈되어 있을 것이다)
+    <br>→ <b>dry up</b> = 마르다, 고갈되다
+  </div>
+  <div class="step-tr">
+    왜냐하면 상업적 활동의 <span class="kw">윤활제 역할을 하는</span> 사회적 자본이 <span class="kw">고갈되어 있을 것이기 때문이다</span>.
+  </div>
+</div>
+
+<!-- 문법: 계속적 관계대명사 which -->
+<div class="gbox">
+  <h4>💡 핵심 문법 ④ — 계속적 용법 <code>, which</code></h4>
+  <p><code>social capital, which serves as the lubricant for ~</code></p>
+  <p>→ <b>콤마 + which</b> = 계속적 용법 (= and it ~): 앞 명사에 대한 <b>보충 설명</b></p>
+  <p>→ 제한적 용법(콤마 없음)과 구별: 여기서는 social capital 전체를 부연 설명</p>
+  <div class="ex">
+    <b>계속적</b>: He bought the car<b>, which</b> was red. (그 차를 샀는데, 그건 빨간색이었다)<br>
+    <b>제한적</b>: He bought the car <b>which</b> was red. (빨간색인 그 차를 샀다)<br><br>
+    이 문장: 사회적 자본<b>, 이것은</b> 상업 활동의 윤활제 역할을 하는데,
+  </div>
+</div>
+
+<!-- FULL TREE -->
+<div class="stp no-bar">
+  <div class="stp-hd">
+    <span class="badge b-fl">FULL TREE</span>
+    <span class="stp-desc">문장 ② 전체 트리</span>
+  </div>
+  <div class="tree">
+<b style="color:#e4e4e7;">문장②</b>
+│
+├─ <b style="color:#e4e4e7;">주절</b>
+│   ├─ S: <span class="s">The delicate balance</span>
+│   │     └─ <span class="pp">between culture and commerce</span> ── 전명구 → balance 수식
+│   │
+│   └─ V: <span class="v">will have been shattered</span> <span class="ps">(미래완료수동)</span>
+│
+└─ <b style="color:#c084fc;">because절 (이유)</b>
+    ├─ S: <span class="s">social capital</span>
+    │     │
+    │     └─ <b style="color:#f9a8d4;">, which절 (계속적 관계대명사)</b>
+    │         ├─ V: <span class="v">serves</span>
+    │         ├─ <span class="pp">as the <span class="o">lubricant</span></span>
+    │         └─ <span class="pp">for commercial operations</span>
+    │
+    └─ V: <span class="v">will have dried up</span> <span class="cm">(미래완료)</span>
+  </div>
+</div>
+
+<!-- 전체 해석 -->
+<div class="trbox">
+  <div class="lb">전체 해석</div>
+  <p>왜냐하면 상업적 활동의 <span class="kw">윤활제 역할을 하는</span> 사회적 자본이 <span class="kw">고갈되어 있을 것이기 때문에</span>, 문화와 상업 사이의 섬세한 균형은 <span class="kw">산산이 부서져 있을 것이다</span>.</p>
+</div>
+
+<!-- 어휘 -->
+<div class="vocab">
+  <div class="lb">핵심 어휘 + 선지 정리</div>
+  <ul>
+    <li><b>capitalist</b> (adj.) 자본주의의</li>
+    <li><b>absorb</b> (v.) 흡수하다</li>
+    <li><b>realm</b> (n.) 영역, 분야</li>
+    <li><b>commodified</b> (adj.) 상품화된</li>
+    <li><b>atrophy</b> (v.) 위축되다, 쇠퇴하다 ✓</li>
+    <li><b>lubricant</b> (n.) 윤활제 ✓</li>
+    <li><b>shatter</b> (v.) 산산이 부수다</li>
+    <li><b>delicate</b> (adj.) 섬세한, 연약한</li>
+    <li><b>commerce</b> (n.) 상업</li>
+    <li><b>dry up</b> 마르다, 고갈되다</li>
+    <li><b>flourish</b> (v.) 번성하다 ✗</li>
+    <li><b>catalyst</b> (n.) 촉매제 ✗</li>
+    <li><b>stagnate</b> (v.) 정체되다 ✗</li>
+    <li><b>impediment</b> (n.) 장애물 ✗</li>
+    <li><b>burgeon</b> (v.) 급성장하다 ✗</li>
+    <li><b>matrix</b> (n.) 기반, 모체 ✗</li>
+  </ul>
+</div>
+
+</div><!-- /sent-sec 2 -->
+
+</div><!-- /wrap -->
+</body>
+</html>
